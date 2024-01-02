@@ -1,0 +1,54 @@
+name: Issue Training
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+
+    env:
+      DEFAULT_TEAM_MEMBER: default-team-member
+
+    steps:
+    - name: Check for Labels
+      id: check
+      run: |
+        # Check if any labels are assigned to the issue
+        labels=$(echo "${{ github.event.issue.labels }}" | jq -r '.[].name')
+
+        if [ -z "$labels" ]; then
+          echo "No labels found. Triage required."
+          echo "::set-output name=triage_required::true"
+        else
+          echo "Labels found. No triaging required."
+          echo "::set-output name=triage_required::false"
+        fi
+
+    - name: Add Triage Label
+      if: steps.check.outputs.triage_required == 'true'
+      run: |
+        # Add "triage required" label to the issue
+        gh issue add-label "${{ github.event.issue.number }}" "triage required"
+    - name: Extract Assignee from Labels
+      if: steps.check.outputs.triage_required == 'true'
+      id: extract_assignee
+      run: |
+        # Extract assignee from label named "assign-to"
+        assignee_label=$(echo "$labels" | grep -i '^assign-to:'
+        if [ -n "$assignee_label" ]; then
+          TEAM_MEMBER=$(assignee_label" | cut -d ':' -f 2 | tr -d '[:space:]')
+        else
+          TEAM_MEMBER=$DEFAULT_TEAM_MEMBER
+        fi
+        echo "::set-output name=team_member::$TEAM_MEMBER"
+
+    - name: Assign to Team Member
+      if: steps.check.outputs.triage_required == 'true'
+      run: |
+        # Assign the issue to the team member specified in the extracted label or use the default team member
+        gh issue assign "${{ github.event.issue.number }}" "${{ steps.extract_assignee.outputs.team_member }}"
+        
